@@ -1,0 +1,3 @@
+-keep class com.zaghloul.masarif.capture.MasarifNotificationListener { *; }
+-keep class com.zaghloul.masarif.capture.SmsReceiver { *; }
+-dontwarn org.json.**
