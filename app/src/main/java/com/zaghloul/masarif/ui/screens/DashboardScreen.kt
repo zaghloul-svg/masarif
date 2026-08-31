@@ -185,11 +185,14 @@ fun DashboardScreen(
                 val folded = MasarifColors.foldToPalette(
                     data.totals.byCategory.entries.map { it.key to it.value }
                 )
+                // Count only what the donut actually shows: totals.count includes
+                // income rows, which never appear as a slice.
+                val spendCount = data.cycleTxns.count { it.countsAsSpend }
                 SectionCard(title = "Where it went") {
                     DonutChart(
                         slices = folded.map { (c, v) -> Slice(c, v, MasarifColors.category(c)) },
                         centerValue = Fmt.money(data.totals.spend, currency),
-                        centerLabel = "${data.totals.count} transactions"
+                        centerLabel = Fmt.plural(spendCount, "purchase")
                     )
                     Spacer(Modifier.height(16.dp))
                     CategoryBreakdown(
