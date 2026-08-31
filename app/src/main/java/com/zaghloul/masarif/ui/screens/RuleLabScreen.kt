@@ -41,6 +41,8 @@ import com.zaghloul.masarif.ui.AppState
 import com.zaghloul.masarif.ui.components.EmptyState
 import com.zaghloul.masarif.ui.components.SectionCard
 import com.zaghloul.masarif.util.Fmt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Where an unreadable alert becomes a permanent rule.
@@ -60,9 +62,13 @@ fun RuleLabScreen(
     var banner by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
 
+    // Queries are blocking; keep them off the main thread.
     androidx.compose.runtime.LaunchedEffect(reloadKey) {
-        queue = state.repo.db.unmatched()
-        rules = state.repo.db.rules()
+        val loaded = withContext(Dispatchers.IO) {
+            state.repo.db.unmatched() to state.repo.db.rules()
+        }
+        queue = loaded.first
+        rules = loaded.second
     }
 
     val target = editing

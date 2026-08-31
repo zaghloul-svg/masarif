@@ -37,6 +37,8 @@ import com.zaghloul.masarif.ui.AppState
 import com.zaghloul.masarif.ui.components.EmptyState
 import com.zaghloul.masarif.ui.components.TxnRow
 import com.zaghloul.masarif.util.Fmt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun TransactionsScreen(
@@ -53,8 +55,9 @@ fun TransactionsScreen(
     var needsReview by remember { mutableStateOf(false) }
     var allTxns by remember { mutableStateOf<List<Txn>>(emptyList()) }
 
+    // Reading the full history is blocking; keep it off the main thread.
     LaunchedEffect(allPeriods, data.totalTxns) {
-        if (allPeriods) allTxns = state.repo.db.allTxns()
+        if (allPeriods) allTxns = withContext(Dispatchers.IO) { state.repo.db.allTxns() }
     }
 
     val source = if (allPeriods) allTxns else data.cycleTxns

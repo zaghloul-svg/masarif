@@ -17,7 +17,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -31,6 +33,9 @@ import com.zaghloul.masarif.ui.components.BudgetMeter
 import com.zaghloul.masarif.ui.components.SectionCard
 import com.zaghloul.masarif.ui.theme.MasarifColors
 import com.zaghloul.masarif.util.Fmt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -47,8 +52,23 @@ fun BudgetsScreen(
         mutableStateOf(if (prefs.savingsTarget > 0) prefs.savingsTarget.roundToInt().toString() else "")
     }
     var cycleDay by remember { mutableStateOf(prefs.cycleStartDay.toString()) }
+    val pendingBudgets = remember { mutableStateMapOf<String, Double>() }
 
     val spentByCat = data.totals.byCategory
+
+    // Recomputing every insight on each keystroke is wasteful, so settle first
+    // and then reload once. Values are written to storage immediately either way.
+    LaunchedEffect(salary, target, cycleDay, pendingBudgets.toMap()) {
+        delay(450)
+        if (pendingBudgets.isNotEmpty()) {
+            val staged = pendingBudgets.toMap()
+            pendingBudgets.clear()
+            withContext(Dispatchers.IO) {
+                staged.forEach { (category, limit) -> state.repo.db.setBudget(category, limit) }
+            }
+        }
+        state.refresh()
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -71,7 +91,6 @@ fun BudgetsScreen(
                         onValueChange = {
                             salary = it.filter { c -> c.isDigit() }
                             prefs.salary = salary.toDoubleOrNull() ?: 0.0
-                            state.refresh()
                         },
                         label = { Text("Monthly income ($currency)") },
                         placeholder = {
@@ -90,7 +109,6 @@ fun BudgetsScreen(
                         onValueChange = {
                             target = it.filter { c -> c.isDigit() }
                             prefs.savingsTarget = target.toDoubleOrNull() ?: 0.0
-                            state.refresh()
                         },
                         label = { Text("Savings target per month ($currency)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -103,10 +121,7 @@ fun BudgetsScreen(
                         onValueChange = {
                             cycleDay = it.filter { c -> c.isDigit() }.take(2)
                             cycleDay.toIntOrNull()?.let { d ->
-                                if (d in 1..28) {
-                                    prefs.cycleStartDay = d
-                                    state.refresh()
-                                }
+                                if (d in 1..28) prefs.cycleStartDay = d
                             }
                         },
                         label = { Text("Budget period starts on day") },
@@ -139,9 +154,7 @@ fun BudgetsScreen(
                             spent = spentByCat[category] ?: 0.0,
                             limit = data.budgets[category] ?: 0.0,
                             currency = currency,
-                            onChange = { v ->
-                                state.launch { state.repo.setBudget(category, v) }
-                            }
+                            onChange = { v -> pendingBudgets[category] = v }
                         )
                     }
                 }

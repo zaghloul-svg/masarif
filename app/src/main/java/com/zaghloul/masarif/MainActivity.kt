@@ -9,11 +9,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -48,7 +48,7 @@ import com.zaghloul.masarif.ui.theme.MasarifTheme
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     DASHBOARD("Overview", Icons.Filled.PieChart),
-    TRANSACTIONS("Activity", Icons.AutoMirrored.Filled.ReceiptLong),
+    TRANSACTIONS("Activity", Icons.Filled.ReceiptLong),
     INSIGHTS("Insights", Icons.Filled.Lightbulb),
     BUDGETS("Budgets", Icons.Filled.AccountBalanceWallet)
 }
