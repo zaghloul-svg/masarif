@@ -374,44 +374,88 @@ class AnalyticsTest {
     }
 }
 
+/**
+ * Pinned to a fixed instant rather than "now".
+ *
+ * These assertions are about the *current* budget cycle, so building the dataset
+ * from System.currentTimeMillis() made them pass mid-month and fail in the first
+ * days of a month, when almost all the data falls into the previous cycle. That
+ * is a broken test, not a broken engine — so the clock is fixed here.
+ */
 class InsightEngineTest {
 
-    private fun txn(daysAgo: Int, amount: Double, merchant: String, category: String, dir: String = Dir.DEBIT): Txn {
+    /** 20 June 2026, midday — well inside a calendar-month cycle. */
+    private val now: Long = Calendar.getInstance().apply {
+        set(2026, Calendar.JUNE, 20, 12, 0, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    private val cycle = Analytics.cycleFor(now, 1)
+    private val history = Analytics.recentCycles(6, 1, now)
+
+    private fun txn(
+        daysBefore: Int, amount: Double, merchant: String, category: String,
+        dir: String = Dir.DEBIT
+    ): Txn {
         val cal = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, -daysAgo)
-            set(Calendar.HOUR_OF_DAY, 12)
-            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, -daysBefore)
         }
         return Txn(
-            id = daysAgo * 10000L + amount.toLong() + merchant.hashCode(),
+            id = daysBefore * 10000L + amount.toLong() + merchant.hashCode(),
             ts = cal.timeInMillis, amount = amount, direction = dir, merchant = merchant,
             merchantNorm = ParseEngine.normalizeMerchant(merchant), category = category,
             account = "4471", source = Src.SMS, raw = merchant,
-            rawHash = "$daysAgo-$amount-$merchant", confidence = "MEDIUM"
+            rawHash = "$daysBefore-$amount-$merchant", confidence = "MEDIUM"
         )
     }
 
+    /** Three months of history, with this cycle deliberately worse than usual. */
     private fun dataset(): List<Txn> = buildList {
-        repeat(3) { m -> repeat(8) { i -> add(txn(m * 30 + i * 3 + 2, 65.0, "Talabat", Cat.DINING)) } }
-        repeat(10) { i -> add(txn(i * 2 + 1, 95.0, "Talabat", Cat.DINING)) }
-        repeat(4) { m -> add(txn(m * 30 + 4, 56.0, "Netflix", Cat.SUBSCRIPTIONS)) }
+        // Baseline dining in the two previous cycles.
+        repeat(2) { m -> repeat(8) { i -> add(txn(30 + m * 30 + i * 2, 65.0, "Talabat", Cat.DINING)) } }
+        // This cycle: more orders, larger tickets.
+        repeat(10) { i -> add(txn(i + 1, 95.0, "Talabat", Cat.DINING)) }
+        // A monthly subscription, four cycles running.
+        repeat(4) { m -> add(txn(4 + m * 30, 56.0, "Netflix", Cat.SUBSCRIPTIONS)) }
+        // A fee this cycle.
         add(txn(6, 105.0, "Annual Fee", Cat.FEES))
-        repeat(3) { m -> add(txn(m * 30 + 5, 18500.0, "Salary", Cat.INCOME, Dir.CREDIT)) }
+        // Salary each cycle.
+        repeat(3) { m -> add(txn(5 + m * 30, 18500.0, "Salary", Cat.INCOME, Dir.CREDIT)) }
+        // A pile of small charges this cycle.
         repeat(15) { i -> add(txn(i + 1, 22.0, "Costa Coffee $i", Cat.DINING)) }
+    }
+
+    private fun insights() = InsightEngine.generate(
+        all = dataset(), cycle = cycle, history = history,
+        budgets = mapOf(Cat.DINING to 500.0),
+        config = InsightEngine.Config(18500.0, 5000.0, 1),
+        now = now
+    )
+
+    @Test
+    fun `the fixture really does sit inside the cycle under test`() {
+        // Guards the pinning above: if this fails, every assertion below is meaningless.
+        val inCycle = dataset().count { cycle.contains(it.ts) }
+        assertTrue("expected the current cycle to hold the recent data, got $inCycle", inCycle >= 25)
     }
 
     @Test
     fun `flags budget breaches, fees and subscriptions`() {
-        val cycle = Analytics.cycleFor(System.currentTimeMillis(), 1)
-        val insights = InsightEngine.generate(
-            all = dataset(), cycle = cycle, history = Analytics.recentCycles(6, 1),
-            budgets = mapOf(Cat.DINING to 500.0),
-            config = InsightEngine.Config(18500.0, 5000.0, 1)
-        )
+        val insights = insights()
         assertTrue(insights.isNotEmpty())
-        assertTrue(insights.any { it.id.startsWith("budget_") && it.category == Cat.DINING })
-        assertTrue(insights.any { it.id == "bank_fees" })
-        assertTrue(insights.any { it.id == "subs_total" })
+        assertTrue(
+            "no dining budget insight in ${insights.map { it.id }}",
+            insights.any { it.id.startsWith("budget_") && it.category == Cat.DINING }
+        )
+        assertTrue(
+            "no bank fee insight in ${insights.map { it.id }}",
+            insights.any { it.id == "bank_fees" }
+        )
+        assertTrue(
+            "no subscription summary in ${insights.map { it.id }}",
+            insights.any { it.id == "subs_total" }
+        )
         assertTrue(insights.all { it.title.isNotBlank() && it.detail.isNotBlank() })
         assertTrue(insights.all { (it.potentialSaving ?: 0.0) >= 0.0 })
         assertTrue(InsightEngine.totalOpportunity(insights) > 0)
@@ -419,21 +463,15 @@ class InsightEngineTest {
 
     @Test
     fun `severities are ordered most serious first`() {
-        val cycle = Analytics.cycleFor(System.currentTimeMillis(), 1)
-        val insights = InsightEngine.generate(
-            all = dataset(), cycle = cycle, history = Analytics.recentCycles(6, 1),
-            budgets = mapOf(Cat.DINING to 500.0),
-            config = InsightEngine.Config(18500.0, 5000.0, 1)
-        )
+        val insights = insights()
         assertTrue(insights.zipWithNext().all { (a, b) -> a.severity.ordinal <= b.severity.ordinal })
     }
 
     @Test
     fun `stays quiet with no data rather than inventing advice`() {
-        val cycle = Analytics.cycleFor(System.currentTimeMillis(), 1)
         val quiet = InsightEngine.generate(
-            all = emptyList(), cycle = cycle, history = Analytics.recentCycles(6, 1),
-            budgets = emptyMap(), config = InsightEngine.Config(0.0, 0.0, 1)
+            all = emptyList(), cycle = cycle, history = history,
+            budgets = emptyMap(), config = InsightEngine.Config(0.0, 0.0, 1), now = now
         )
         assertTrue("expected silence, got ${quiet.map { it.id }}", quiet.size <= 1)
     }

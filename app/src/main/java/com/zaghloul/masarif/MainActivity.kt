@@ -68,16 +68,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             MasarifTheme {
                 Surface(Modifier.fillMaxSize()) {
-                    MasarifApp()
+                    MasarifRoot()
                 }
             }
         }
     }
 }
 
+// Named MasarifRoot, not MasarifApp: the Application subclass in MasarifApp.kt
+// already owns that name in this package, and a constructor plus a function
+// sharing a name is an overload-resolution ambiguity.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MasarifApp() {
+private fun MasarifRoot() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val state = remember { AppState.get(context) }
     val data by state.data.collectAsState()
