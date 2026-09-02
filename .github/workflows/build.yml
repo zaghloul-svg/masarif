@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # New repositories hand Actions a read-only token by default, which makes
+    # the release step fail with a 403. Ask for write access explicitly.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
