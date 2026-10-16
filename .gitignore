@@ -13,3 +13,8 @@ app/build/
 *.aab
 *.keystore
 !debug.keystore
+
+# Signing key - never commit
+masarif-release.jks
+*.jks
+*.keystore
